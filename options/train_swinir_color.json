@@ -1,6 +1,6 @@
 {
-  "task": "FBCNN-Color FINAL (with scheduler)"  //  root/task/images-models-options
-  , "model": "fbcnn" 
+  "task": "SwinIR-Color"  //  root/task/images-models-options
+  , "model": "plain" 
   , "gpu_ids": [0]
   , "n_channels": 3  // broadcast to "datasets", 1 for grayscale, 3 for color
   , "merge_bn": false               // BN for DnCNN
@@ -17,10 +17,10 @@
       , "dataset_type": "jpeg"         // "jpeg" | "jpeggray" | "jpeggraydouble"
       , "dataroot_H": "./trainsets/DIV2K_full"// path of original training dataset
       , "dataroot_L": null            // path of L training dataset
-      , "H_size": 96                  // patch size 40 | 64 | 96 | 128 | 192
+      , "H_size": 126                  // patch size 40 | 64 | 96 | 128 | 192
       , "dataloader_shuffle": true
       , "dataloader_num_workers": 12 
-      , "dataloader_batch_size": 8     // batch size 1 | 16 | 32 | 48 | 64 | 128
+      , "dataloader_batch_size": 16     // batch size 1 | 16 | 32 | 48 | 64 | 128
     }, "test": {
       "name": "test_dataset"            // just name
       , "dataset_type": "jpeg"         // "jpeg" | "jpeggray" | "jpeggraydouble" 
@@ -52,20 +52,19 @@
     , "total_loss_divider": 32 // 128 / batch_size
 
     , "G_optimizer_type": "adam"        // fixed, adam is enough
-    , "G_optimizer_lr": 2e-05//1.25e-6// 6e-7         // learning rate
+    , "G_optimizer_lr": 2e-5         // learning rate
     , "G_optimizer_clipgrad": null      // unused
-    , "G_optimizer_reuse": true
 
     , "G_scheduler_type": "MultiStepLR" // "MultiStepLR" is enough
-    , "G_scheduler_milestones": [25000, 50000, 100000]//[125780, 129090]// [6620, 13240, 26480, 39720, 52960, 66200, 79440, 105920, 200000, 400000, 1200000, 1600000, 1800000]
+    , "G_scheduler_milestones": [200000, 400000, 1200000, 1600000, 1800000]
     , "G_scheduler_gamma": 0.5
 
     , "G_regularizer_orthstep": null    // unused
     , "G_regularizer_clipstep": null    // unused
 
-    , "checkpoint_test": 1000//1250           // for testing 5000
-    , "checkpoint_save":  1000//2500           // for saving model 5000
-    , "checkpoint_print": 100//100           // for print
+    , "checkpoint_test": 5000//1250           // for testing 5000
+    , "checkpoint_save":  5000//2500           // for saving model 5000
+    , "checkpoint_print": 200//100           // for print
   }
 }
 

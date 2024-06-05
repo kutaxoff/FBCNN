@@ -33,7 +33,7 @@ def logger_info(logger_name, log_path='default_logger.log'):
         print('LogHandlers exist!')
     else:
         print('LogHandlers setup!')
-        level = logging.INFO
+        level = logging.DEBUG
         formatter = logging.Formatter('%(asctime)s.%(msecs)03d : %(message)s', datefmt='%y-%m-%d %H:%M:%S')
         fh = logging.FileHandler(log_path, mode='a')
         fh.setFormatter(formatter)
@@ -43,6 +43,7 @@ def logger_info(logger_name, log_path='default_logger.log'):
 
         sh = logging.StreamHandler()
         sh.setFormatter(formatter)
+        sh.setLevel(logging.INFO)
         log.addHandler(sh)
 
 

@@ -3,27 +3,30 @@ import torch
 import torch.nn as nn
 from torch.optim import lr_scheduler
 from torch.optim import Adam
-from torch.nn.parallel import DataParallel  # , DistributedDataParallel
 
 from models.select_network import define_G
 from models.model_base import ModelBase
+from models.loss import CharbonnierLoss
 from models.loss_ssim import SSIMLoss
 
 from utils.utils_model import test_mode
 from utils.utils_regularizers import regularizer_orth, regularizer_clip
-from utils.yellowfin import YFOptimizer
 
-import numpy as np
-from IPython import embed
-class ModelFBCNN(ModelBase):
+import time
+
+
+class ModelPlain(ModelBase):
     """Train with pixel loss"""
     def __init__(self, opt):
-        super(ModelFBCNN, self).__init__(opt)
+        super(ModelPlain, self).__init__(opt)
         # ------------------------------------
         # define network
         # ------------------------------------
-        self.netG = define_G(opt).to(self.device)
-        self.netG = DataParallel(self.netG)
+        self.opt_train = self.opt['train']    # training option
+        self.netG = define_G(opt)
+        self.netG = self.model_to_device(self.netG)
+        if self.opt_train['E_decay'] > 0:
+            self.netE = define_G(opt).to(self.device).eval()
 
     """
     # ----------------------------------------
@@ -36,14 +39,14 @@ class ModelFBCNN(ModelBase):
     # initialize training
     # ----------------------------------------
     def init_train(self):
-        self.opt_train = self.opt['train']    # training option
         self.load()                           # load model
         self.netG.train()                     # set training mode,for BN
         self.define_loss()                    # define loss
         self.define_optimizer()               # define optimizer
-        self.load_optimizers()               # load optimizer
+        self.load_optimizers()                # load optimizer
         self.define_scheduler()               # define scheduler
         self.log_dict = OrderedDict()         # log
+
     # ----------------------------------------
     # load pre-trained G model
     # ----------------------------------------
@@ -51,8 +54,17 @@ class ModelFBCNN(ModelBase):
         load_path_G = self.opt['path']['pretrained_netG']
         if load_path_G is not None:
             print('Loading model for G [{:s}] ...'.format(load_path_G))
-            self.load_network(load_path_G, self.netG)
-            
+            self.load_network(load_path_G, self.netG, strict=self.opt_train['G_param_strict'], param_key='params')
+        load_path_E = self.opt['path']['pretrained_netE']
+        if self.opt_train['E_decay'] > 0:
+            if load_path_E is not None:
+                print('Loading model for E [{:s}] ...'.format(load_path_E))
+                self.load_network(load_path_E, self.netE, strict=self.opt_train['E_param_strict'], param_key='params_ema')
+            else:
+                print('Copying model for E ...')
+                self.update_E(0)
+            self.netE.eval()
+
     # ----------------------------------------
     # load optimizer
     # ----------------------------------------
@@ -63,10 +75,12 @@ class ModelFBCNN(ModelBase):
             self.load_optimizer(load_path_optimizerG, self.G_optimizer)
 
     # ----------------------------------------
-    # save model
+    # save model / optimizer(optional)
     # ----------------------------------------
     def save(self, iter_label):
         self.save_network(self.save_dir, self.netG, 'G', iter_label)
+        if self.opt_train['E_decay'] > 0:
+            self.save_network(self.save_dir, self.netE, 'E', iter_label)
         if self.opt_train['G_optimizer_reuse']:
             self.save_optimizer(self.save_dir, self.G_optimizer, 'optimizerG', iter_label)
 
@@ -83,22 +97,11 @@ class ModelFBCNN(ModelBase):
             self.G_lossfn = nn.MSELoss(reduction='sum').to(self.device)
         elif G_lossfn_type == 'ssim':
             self.G_lossfn = SSIMLoss().to(self.device)
+        elif G_lossfn_type == 'charbonnier':
+            self.G_lossfn = CharbonnierLoss(self.opt_train['G_charbonnier_eps']).to(self.device)
         else:
             raise NotImplementedError('Loss type [{:s}] is not found.'.format(G_lossfn_type))
         self.G_lossfn_weight = self.opt_train['G_lossfn_weight']
-
-        # define quality factor loss function
-
-        QF_lossfn_type = self.opt_train['QF_lossfn_type']
-        if QF_lossfn_type == 'l1':
-            self.QF_lossfn = nn.L1Loss().to(self.device)
-        elif QF_lossfn_type == 'l2':
-            self.QF_lossfn = nn.MSELoss().to(self.device)
-        elif QF_lossfn_type == 'l2sum':
-            self.QF_lossfn = nn.MSELoss(reduction='sum').to(self.device)
-        else:
-            raise NotImplementedError('Loss type [{:s}] is not found.'.format(QF_lossfn_type))
-        self.QF_lossfn_weight = self.opt_train['QF_lossfn_weight']
 
     # ----------------------------------------
     # define optimizer
@@ -110,25 +113,31 @@ class ModelFBCNN(ModelBase):
                 G_optim_params.append(v)
             else:
                 print('Params [{:s}] will not optimize.'.format(k))
-        self.G_optimizer = Adam(G_optim_params, lr=self.opt_train['G_optimizer_lr'], weight_decay=0)
-        # self.G_optimizer = YFOptimizer(G_optim_params, lr=self.opt_train['G_optimizer_lr'], weight_decay=0)
+        if self.opt_train['G_optimizer_type'] == 'adam':
+            self.G_optimizer = Adam(G_optim_params, lr=self.opt_train['G_optimizer_lr'],
+                                    betas=self.opt_train['G_optimizer_betas'],
+                                    weight_decay=self.opt_train['G_optimizer_wd'])
+        else:
+            raise NotImplementedError
 
     # ----------------------------------------
     # define scheduler, only "MultiStepLR"
     # ----------------------------------------
     def define_scheduler(self):
-        if self.opt_train['G_scheduler_type'] == 'ReduceLROnPlateau':
-            self.schedulers.append(lr_scheduler.ReduceLROnPlateau(self.G_optimizer,
-                                                                  mode='min',
-                                                                  factor=self.opt_train['G_scheduler_gamma'],
-                                                                  threshold=5e-3,
-                                                                  threshold_mode='abs',
-                                                                  ))
-        self.schedulers.append(lr_scheduler.MultiStepLR(self.G_optimizer,
-                                                        self.opt_train['G_scheduler_milestones'],
-                                                        self.opt_train['G_scheduler_gamma'],
-                                                        ))
-        # self.schedulers.append(self.G_optimizer)
+        if self.opt_train['G_scheduler_type'] == 'MultiStepLR':
+            self.schedulers.append(lr_scheduler.MultiStepLR(self.G_optimizer,
+                                                            self.opt_train['G_scheduler_milestones'],
+                                                            self.opt_train['G_scheduler_gamma']
+                                                            ))
+        elif self.opt_train['G_scheduler_type'] == 'CosineAnnealingWarmRestarts':
+            self.schedulers.append(lr_scheduler.CosineAnnealingWarmRestarts(self.G_optimizer,
+                                                            self.opt_train['G_scheduler_periods'],
+                                                            self.opt_train['G_scheduler_restart_weights'],
+                                                            self.opt_train['G_scheduler_eta_min']
+                                                            ))
+        else:
+            raise NotImplementedError
+
     """
     # ----------------------------------------
     # Optimization during training with data
@@ -139,32 +148,39 @@ class ModelFBCNN(ModelBase):
     # ----------------------------------------
     # feed L/H data
     # ----------------------------------------
-    def feed_data(self, data):
-        self.H = data['H'].to(self.device)
+    def feed_data(self, data, need_H=True):
         self.L = data['L'].to(self.device)
-        self.qf_gt = data['qf'].to(self.device).squeeze()
+        if need_H:
+            self.H = data['H'].to(self.device)
+
+    # ----------------------------------------
+    # feed L to netG
+    # ----------------------------------------
+    def netG_forward(self):
+        self.E = self.netG(self.L)
+
     # ----------------------------------------
     # update parameters and get loss
     # ----------------------------------------
     def optimize_parameters(self, current_step):
+        # t_cur = time.process_time()
+        # print('optimize_parameters start')
         self.G_optimizer.zero_grad()
-        self.E, self.qf_est = self.netG(self.L)
-        self.qf_est = self.qf_est.squeeze()
-        self.G_lossfn_weight = self.opt_train['G_lossfn_weight']
+        # t = time.process_time() - t_cur
+        # t_cur = time.process_time()
+        # print('optimize_parameters G_optimizer.zero_grad() - ', t)
+        self.netG_forward()
+        # t = time.process_time() - t_cur
+        # t_cur = time.process_time()
+        # print('optimize_parameters netG_forward() - ', t)
         G_loss = self.G_lossfn_weight * self.G_lossfn(self.E, self.H)
-        self.QF_lossfn_weight = self.opt_train['QF_lossfn_weight']
-#        embed()
-        QF_loss = self.QF_lossfn_weight * self.QF_lossfn(self.qf_est, self.qf_gt)
-        if self.qf_gt.dim() > 0:
-            qf_gt = self.qf_gt[0, ...]
-        else:
-            qf_gt = self.qf_gt
-        if torch.isnan(qf_gt):
-            loss = G_loss
-        else:
-            loss = G_loss + QF_loss
-        # loss = loss / self.opt_train['total_loss_divider'] 
-        loss.backward()
+        # t = time.process_time() - t_cur
+        # t_cur = time.process_time()
+        # print('optimize_parameters G_loss calc - ', t)
+        G_loss.backward()
+        # t = time.process_time() - t_cur
+        # t_cur = time.process_time()
+        # print('optimize_parameters G_loss.backward() - ', t)
 
         # ------------------------------------
         # clip_grad
@@ -173,8 +189,14 @@ class ModelFBCNN(ModelBase):
         G_optimizer_clipgrad = self.opt_train['G_optimizer_clipgrad'] if self.opt_train['G_optimizer_clipgrad'] else 0
         if G_optimizer_clipgrad > 0:
             torch.nn.utils.clip_grad_norm_(self.parameters(), max_norm=self.opt_train['G_optimizer_clipgrad'], norm_type=2)
+            # t = time.process_time() - t_cur
+            # t_cur = time.process_time()
+            # print('optimize_parameters clip_grad_norm_ - ', t)
 
         self.G_optimizer.step()
+        # t = time.process_time() - t_cur
+        # t_cur = time.process_time()
+        # print('optimize_parameters G_optimizer.step() - ', t)
 
         # ------------------------------------
         # regularizer
@@ -188,16 +210,20 @@ class ModelFBCNN(ModelBase):
 
         # self.log_dict['G_loss'] = G_loss.item()/self.E.size()[0]  # if `reduction='sum'`
         self.log_dict['G_loss'] = G_loss.item()
-        self.log_dict['QF_loss'] = QF_loss.item()
+
+        if self.opt_train['E_decay'] > 0:
+            self.update_E(self.opt_train['E_decay'])
+        # t_cur = time.process_time()
+        # t = time.process_time() - t_cur
+        # print('optimize_parameters end - ', t)
+
     # ----------------------------------------
     # test / inference
     # ----------------------------------------
     def test(self):
         self.netG.eval()
         with torch.no_grad():
-#            self.E, self.QF = self.netG(self.L, torch.tensor([0.1]).reshape(1,1))
-            self.E, self.QF = self.netG(self.L)
-
+            self.netG_forward()
         self.netG.train()
 
     # ----------------------------------------
@@ -222,8 +248,6 @@ class ModelFBCNN(ModelBase):
         out_dict = OrderedDict()
         out_dict['L'] = self.L.detach()[0].float().cpu()
         out_dict['E'] = self.E.detach()[0].float().cpu()
-#        out_dict['QF'] = self.QF.mean(-1).mean(-1).detach()[0].float().cpu() # qf table
-        out_dict['QF'] = self.QF.detach()[0].float().cpu()
         if need_H:
             out_dict['H'] = self.H.detach()[0].float().cpu()
         return out_dict
@@ -231,11 +255,11 @@ class ModelFBCNN(ModelBase):
     # ----------------------------------------
     # get L, E, H batch images
     # ----------------------------------------
-    def current_results(self, need_O=True):
+    def current_results(self, need_H=True):
         out_dict = OrderedDict()
         out_dict['L'] = self.L.detach().float().cpu()
         out_dict['E'] = self.E.detach().float().cpu()
-        if need_O:
+        if need_H:
             out_dict['H'] = self.H.detach().float().cpu()
         return out_dict
 

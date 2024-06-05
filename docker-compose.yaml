@@ -1,0 +1,149 @@
+
+
+services:
+  train:
+    build: .
+    volumes:
+      - ./trainsets:/app/trainsets
+      - ./testsets:/app/testsets
+      - ./deblocking:/app/deblocking
+      - ./deblocking_small:/app/deblocking_small
+    command: python3 main_train_fbcnn.py --opt options/train_fbcnn_color.json
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [ gpu ]
+  train-test:
+    build: .
+    volumes:
+      - ./trainsets:/app/trainsets
+      - ./testsets:/app/testsets
+      - ./deblocking:/app/deblocking
+      - ./deblocking_small:/app/deblocking_small
+    command: python3 main_train_fbcnn.py --opt options/train_fbcnn_color_test.json
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [ gpu ]
+  train-simple:
+    build: .
+    volumes:
+      - ./trainsets:/app/trainsets
+      - ./testsets:/app/testsets
+      - ./deblocking:/app/deblocking
+      - ./deblocking_small:/app/deblocking_small
+    command: python3 main_train_fbcnn.py --opt options/train_fbcnn_color_test_simple.json
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [ gpu ]
+  train-test2:
+    build: .
+    volumes:
+      - ./trainsets:/app/trainsets
+      - ./testsets:/app/testsets
+      - ./deblocking:/app/deblocking
+      - ./deblocking_small:/app/deblocking_small
+    command: python3 main_train_fbcnn.py --opt options/train_fbcnn_color_test2.json
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [ gpu ]
+  # profile:
+  #   build: .
+  #   volumes:
+  #     - ./trainsets:/app/trainsets
+  #     - ./testsets:/app/testsets
+  #     - ./deblocking:/app/deblocking
+  #   command: python3 -m torch.utils.bottleneck main_train_fbcnn.py --opt options/train_fbcnn_color_test.json
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: 1
+  #             capabilities: [ gpu ]
+  generate-batches-cache:
+    build: .
+    volumes:
+      - ./trainsets:/app/trainsets
+      - ./testsets:/app/testsets
+      - ./deblocking:/app/deblocking
+    command: python3 generate_batches_cache.py
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [ gpu ]
+  test-orig:
+    build: .
+    volumes:
+      - ./trainsets:/app/trainsets
+      - ./testsets:/app/testsets
+      - ./deblocking:/app/deblocking
+      - ./model_zoo:/app/model_zoo
+      - ./test_results:/app/test_results
+    command: python3 main_test_fbcnn_color.py --model fbcnn_30000_G_599.pth
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [ gpu ]
+  test-swinir:
+    build: .
+    volumes:
+      - ./trainsets:/app/trainsets
+      - ./testsets:/app/testsets
+      - ./deblocking:/app/deblocking
+      - ./model_zoo:/app/model_zoo
+      - ./test_results:/app/test_results
+    command: python3 main_test_fbcnn_color.py --model swinir_40200_G_99.pth --network swinir
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [ gpu ]
+  test-new:
+    build: .
+    volumes:
+      - ./trainsets:/app/trainsets
+      - ./testsets:/app/testsets
+      - ./deblocking:/app/deblocking
+      - ./model_zoo:/app/model_zoo
+      - ./test_results:/app/test_results
+    command: python3 main_test_fbcnn_color.py --model swin_fbcnn_120000_G_599.pth --network test
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [ gpu ]
+
+volumes:
+  trainsets:
+  testsets:
+  deblocking:
+  deblocking_small:
+  model_zoo:
+  test_results:
+
+# -m torch.distributed.launch --nproc_per_node=8 --master_port=1234 

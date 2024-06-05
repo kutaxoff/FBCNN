@@ -12,6 +12,7 @@ class DatasetJPEG(data.Dataset):
         self.opt = opt
         self.n_channels = opt['n_channels'] if opt['n_channels'] else 3
         self.patch_size = self.opt['H_size'] if opt['H_size'] else 64
+        self.patch_size_plus8 = self.patch_size+8
 
         # -------------------------------------
         # get the path of H, return None if input is None
@@ -34,11 +35,6 @@ class DatasetJPEG(data.Dataset):
             # --------------------------------
             """
             H, W = img_H.shape[:2]
-
-            # ---------------------------------
-            # randomly crop the patch
-            # ---------------------------------
-            self.patch_size_plus8 = self.patch_size+8
             # ---------------------------------
             # randomly crop the patch
             # ---------------------------------
@@ -120,8 +116,7 @@ class DatasetJPEG(data.Dataset):
             noise_level_map = torch.ones((1, img_L.shape[0], img_L.shape[0])).mul_(noise_level).float()
             img_L, img_H = util.uint2tensor3(img_L), util.uint2tensor3(img_H)
 
-
-        return {'L': img_L, 'H': img_H, 'qf': noise_level, 'L_path': L_path, 'H_path': H_path}
+        return {'L': img_L, 'H': img_H, 'qf': noise_level, 'L_path': L_path, 'H_path': H_path, 'L_qf': quality_factor / 100.0}
 
     def __len__(self):
         return len(self.paths_H)

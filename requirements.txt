@@ -1,0 +1,10 @@
+opencv-python
+torchvision
+matplotlib
+IPython
+requests
+timm
+bitstring
+jellyfish
+humanize
+psutil

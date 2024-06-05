@@ -11,6 +11,10 @@ def define_Model(opt):
 
     if model == 'fbcnn':
         from models.model_fbcnn import ModelFBCNN as M
+        
+        
+    elif model == 'fbcnn-test':
+        from models.model_fbcnn import ModelFBCNN as M
 
     elif model == 'gan':     # one input: L
         from models.model_gan import ModelGAN as M

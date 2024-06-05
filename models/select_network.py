@@ -1,6 +1,7 @@
 import functools
 import torch
 from torch.nn import init
+# from models.network_fbcnn_test import DepthwiseSeparableConv2d
 
 """
 # --------------------------------------------
@@ -29,6 +30,49 @@ def define_G(opt):
                    nc=opt_net['nc'],
                    nb=opt_net['nb'],  # total number of conv layers
                    act_mode=opt_net['act_mode'])
+        
+    
+    elif net_type == 'fbcnn-test':
+        from models.network_fbcnn_test import FBCNN as net
+        netG = net(in_nc=opt_net['in_nc'],
+                   out_nc=opt_net['out_nc'],
+                   nc=opt_net['nc'],
+                   nb=opt_net['nb'],  # total number of conv layers
+                   act_mode=opt_net['act_mode'])
+    
+    elif net_type == 'fbcnn-simple':
+        from models.network_fbcnn_test_simple import FBCNN as net
+        netG = net(in_nc=opt_net['in_nc'],
+                   out_nc=opt_net['out_nc'],
+                   nc=opt_net['nc'],
+                   nb=opt_net['nb'],  # total number of conv layers
+                   act_mode=opt_net['act_mode'])
+
+    elif net_type == 'fbcnn-test2':
+        from models.network_fbcnn_test2 import FBCNN as net
+        netG = net(in_nc=opt_net['in_nc'],
+                   out_nc=opt_net['out_nc'],
+                   nc=opt_net['nc'],
+                   nb=opt_net['nb'],  # total number of conv layers
+                   act_mode=opt_net['act_mode'])
+        
+    
+    # ----------------------------------------
+    # SwinIR
+    # ----------------------------------------
+    elif net_type == 'swinir':
+        from models.network_swinir import SwinIR as net
+        netG = net(upscale=opt_net['upscale'],
+                   in_chans=opt_net['in_chans'],
+                   img_size=opt_net['img_size'],
+                   window_size=opt_net['window_size'],
+                   img_range=opt_net['img_range'],
+                   depths=opt_net['depths'],
+                   embed_dim=opt_net['embed_dim'],
+                   num_heads=opt_net['num_heads'],
+                   mlp_ratio=opt_net['mlp_ratio'],
+                   upsampler=opt_net['upsampler'],
+                   resi_connection=opt_net['resi_connection'])
 
     # ----------------------------------------
     # others
@@ -146,8 +190,12 @@ def init_weights(net, init_type='xavier_uniform', init_bn_type='uniform', gain=1
     """
     print('Initialization method [{:s} + {:s}], gain is [{:.2f}]'.format(init_type, init_bn_type, gain))
 
-    def init_fn(m, init_type='xavier_uniform', init_bn_type='uniform', gain=1):
+    def init_fn(m, init_type='xavier_uniform', init_bn_type='uniform', gain=1, debug=False):
         classname = m.__class__.__name__
+
+        # if isinstance(m, DepthwiseSeparableConv2d):
+        #     init_fn(m.depthwise, init_type, init_bn_type, gain, True)
+        #     init_fn(m.pointwise, init_type, init_bn_type, gain, True)
 
         if classname.find('Conv') != -1 or classname.find('Linear') != -1:
 

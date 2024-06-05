@@ -61,7 +61,7 @@ class ModelBase():
             scheduler.step(n)
 
     def current_learning_rate(self):
-        return self.schedulers[0].get_lr()[0]
+        return self.schedulers[0].get_last_lr()[0]
 
 
     """
@@ -135,6 +135,20 @@ class ModelBase():
         if isinstance(network, nn.DataParallel):
             network = network.module
         network.load_state_dict(torch.load(load_path), strict=strict)
+        
+    # ----------------------------------------
+    # save the state_dict of the optimizer
+    # ----------------------------------------
+    def save_optimizer(self, save_dir, optimizer, optimizer_label, iter_label):
+        save_filename = '{}_{}.pth'.format(iter_label, optimizer_label)
+        save_path = os.path.join(save_dir, save_filename)
+        torch.save(optimizer.state_dict(), save_path)
+
+    # ----------------------------------------
+    # load the state_dict of the optimizer
+    # ----------------------------------------
+    def load_optimizer(self, load_path, optimizer):
+        optimizer.load_state_dict(torch.load(load_path, map_location=lambda storage, loc: storage.cuda(torch.cuda.current_device())))
 
     """
     # ----------------------------------------
